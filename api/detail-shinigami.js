@@ -1,63 +1,30 @@
 import axios from "axios";
 
 const BASE_URL = "https://api.shngm.io";
+const WEB_URL = "https://g.shinigami.asia";
 
-// Fungsi helper untuk mengambil ID dari URL
-// Sesuaikan regex ini jika format URL berubah
-const getMangaId = (url) => {
-  const parts = url.split('/');
-  return parts[parts.length - 1]; 
-};
+function getUuid(input) {
+  const match = String(input).match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  return match ? match[0] : null;
+}
 
 export default async function handler(req, res) {
-  // Ambil url dari query parameter, dan page (default 1)
-  const { url, page = 1 } = req.query;
-  const page_size = 24;
-
-  if (!url) {
-    return res.status(400).json({ status: false, message: "Parameter 'url' wajib diisi." });
-  }
-
-  const mangaId = getMangaId(url);
+  const { url, page = 1, page_size = 24 } = req.query;
+  const mangaId = getUuid(url);
+  if (!mangaId) return res.status(400).json({ status: false, message: "Invalid URL or Manga ID" });
 
   try {
-    // Jalankan dua request bersamaan agar loading lebih cepat
-    const [detailResponse, chapterResponse] = await Promise.all([
+    const [detail, chapters] = await Promise.all([
       axios.get(`${BASE_URL}/v1/manga/detail/${mangaId}`),
-      axios.get(`${BASE_URL}/v1/chapter/${mangaId}/list`, {
-        params: { 
-          page: page, 
-          page_size: page_size, 
-          sort_by: "chapter_number", 
-          sort_order: "desc" 
-        }
-      })
+      axios.get(`${BASE_URL}/v1/chapter/${mangaId}/list`, { params: { page, page_size, sort_by: "chapter_number", sort_order: "desc" } })
     ]);
 
-    const chapters = chapterResponse.data.data || [];
-    
-    // Logika Pagination:
-    // Jika jumlah chapter kurang dari page_size, berarti ini halaman terakhir
-    const isLastPage = chapters.length < page_size;
-
-    return res.status(200).json({
+    res.status(200).json({
       status: true,
-      meta: {
-        current_page: parseInt(page),
-        page_size: page_size,
-        is_last_page: isLastPage,
-        count: chapters.length
-      },
-      detail: detailResponse.data.data,
-      chapters: chapters
+      detail: detail.data.data,
+      chapters: chapters.data.data
     });
-
-  } catch (error) {
-    console.error("Error fetching detail:", error.message);
-    return res.status(500).json({ 
-      status: false, 
-      message: "Gagal mengambil data dari server.",
-      error: error.message 
-    });
+  } catch (err) {
+    res.status(500).json({ status: false, error: err.message });
   }
 }
